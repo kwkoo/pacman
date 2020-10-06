@@ -340,33 +340,21 @@ function getGCPCloudMetadata(callback) {
 function getK8sCloudMetadata(callback) {
     console.log('getK8sCloudMetadata');
     // Set options to retrieve k8s api information
-    var node_name = process.env.MY_NODE_NAME;
-    console.log('Querying ' + node_name + ' for cloud data');
-
-    try {
-        var sa_token = fs.readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/token');
-        var ca_file = fs.readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/ca.crt');
-    } catch (err) {
-        console.log(err)
-    }
-
-    var headers = {
-        'Authorization': `Bearer ${sa_token}`
-    };
+    var nginx_ip = process.env.PLACEMENT_NGINX_SERVICE_SERVICE_HOST;
+    console.log('Querying cloud.provider.svc.cluster.local on port 8080 for cloud data');
 
     var genericOptions = {
-        host: 'kubernetes.default.svc',
-        port: 443,
-        path: `/api/v1/nodes/${node_name}`,
+        host: `cloud.provider.svc.cluster.local`,
+        port: 8080,
+        path: '/provider/cloud.json',
+        method: 'GET',
         timeout: 10000,
-        ca: ca_file,
-        headers: headers,
-    };
+        };
 
     var cloudName = 'unknown',
         zone = 'unknown';
 
-    var req = https.request(genericOptions, (zoneRes) => {
+    var req = http.request(genericOptions, (zoneRes) => {
         let error;
 
         if (zoneRes.statusCode !== 200) {
@@ -391,19 +379,18 @@ function getK8sCloudMetadata(callback) {
         zoneRes.on('data', (chunk) => {
             body.push(chunk);
         });
+
         zoneRes.on('end', () => {
             var metaData = JSON.parse(body.join(''));
             console.log(`RESULT: ${metaData}`);
             console.log('No more data in response.');
 
-            if (metaData.spec.providerID) {
-                var provider = metaData.spec.providerID;
-                cloudName = String(provider.split(":", 1)); // Split on providerID if request was successful
+            if (metaData.cloudName) {
+                cloudName = metaData.cloudName;
             }
 
-            // use the annotation  to identify the zone if available
-            if (metaData.metadata.labels['failure-domain.beta.kubernetes.io/zone']) {
-                zone = metaData.metadata.labels['failure-domain.beta.kubernetes.io/zone'].toLowerCase();
+            if (metaData.zone) {
+                zone = metaData.zone;
 
             }
             // return CLOUD and ZONE data

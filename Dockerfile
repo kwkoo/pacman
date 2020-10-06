@@ -7,7 +7,8 @@ RUN mkdir -p /usr/src/app
 WORKDIR /usr/src/app
 
 # Clone game source code
-RUN git clone https://github.com/font/pacman.git .
+#RUN git clone https://github.com/jnpacker/pacman.git .
+add . /usr/src/app
 
 # Install app dependencies
 RUN npm install
