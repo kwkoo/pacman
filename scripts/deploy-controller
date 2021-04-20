@@ -1,0 +1,16 @@
+#!/bin/bash
+
+PROJ=demo
+
+set -e
+
+oc project ${PROJ} || oc new-project ${PROJ}
+
+oc create sa -n ${PROJ} pod-watcher
+oc create clusterrole pod-watcher --verb=watch,list,update --resource=pods
+oc create clusterrole node-lister --verb=get,watch,list --resource=nodes
+oc adm policy add-cluster-role-to-user pod-watcher -z pod-watcher -n ${PROJ} --rolebinding-name=pod-watcher-pod-watcher
+oc adm policy add-cluster-role-to-user node-lister -z pod-watcher -n ${PROJ} --rolebinding-name=pod-watcher-node-lister
+
+oc new-app --docker-image=ghcr.io/kwkoo/pod-watcher:0.1 -n ${PROJ} -e ANNOTATIONKEY=nodeinfo
+oc set sa -n ${PROJ} deploy/pod-watcher pod-watcher

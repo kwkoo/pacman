@@ -1,0 +1,12 @@
+#!/bin/bash
+
+PROJ=demo
+
+oc delete all -l app=pod-watcher -n ${PROJ}
+oc delete clusterrolebinding/pod-watcher-pod-watcher
+oc delete clusterrolebinding/pod-watcher-node-lister
+oc delete clusterrole/pod-watcher
+oc delete clusterrole/node-lister
+oc delete sa/pod-watcher -n ${PROJ}
+
+exit 0

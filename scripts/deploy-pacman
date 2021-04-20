@@ -1,0 +1,31 @@
+#!/bin/bash
+
+PROJ=demo
+
+cd `dirname $0`
+BASE=`pwd`
+cd - >> /dev/null
+
+set -e
+
+oc project ${PROJ} || oc new-project ${PROJ}
+
+oc new-build \
+  -n ${PROJ} \
+  --name=pacman \
+  -l app=pacman \
+  --binary \
+  -i openshift/nodejs:latest
+
+echo -n "waiting for BuildConfig to appear..."
+while [ "$(oc get -n ${PROJ} bc/pacman --no-headers 2>/dev/null | wc -l )" -lt 1 ]; do
+  echo -n "."
+  sleep 5
+done
+echo "done"
+
+oc start-build -n ${PROJ} pacman --from-dir=${BASE}/.. --follow
+oc apply -n ${PROJ} -f ${BASE}/../yaml/pacman.yaml
+oc rollout status -n ${PROJ} deploy/pacman -w
+
+echo "pacman is now available at http://$(oc get -n ${PROJ} route/pacman -o jsonpath='{.spec.host}')"
