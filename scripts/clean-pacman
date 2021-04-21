@@ -3,5 +3,7 @@
 PROJ=demo
 
 oc delete all -l app=pacman -n ${PROJ}
+oc delete all -l app=mongodb-ephemeral -n ${PROJ}
+oc delete secrets -l app=mongodb-ephemeral -n ${PROJ}
 
 exit 0

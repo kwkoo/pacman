@@ -1,6 +1,10 @@
 #!/bin/bash
 
-PROJ=demo
+PROJ="demo"
+MONGODB_USER="pacman"
+MONGODB_PASSWORD="pacpassword"
+MONGODB_DATABASE="pacman"
+MONGODB_ADMIN_PASSWORD="${MONGODB_PASSWORD}"
 
 cd `dirname $0`
 BASE=`pwd`
@@ -9,6 +13,17 @@ cd - >> /dev/null
 set -e
 
 oc project ${PROJ} || oc new-project ${PROJ}
+
+# Deploy mongodb
+oc new-app \
+  -n ${PROJ} \
+  -f https://raw.githubusercontent.com/sclorg/mongodb-container/master/examples/mongodb-ephemeral-template.json \
+  -p MONGODB_USER="${MONGODB_USER}" \
+  -p MONGODB_PASSWORD="${MONGODB_PASSWORD}" \
+  -p MONGODB_DATABASE="${MONGODB_DATABASE}" \
+  -p MONGODB_ADMIN_PASSWORD="${MONGODB_ADMIN_PASSWORD}"
+
+oc rollout status -n ${PROJ} dc/mongodb
 
 oc new-build \
   -n ${PROJ} \
@@ -26,6 +41,14 @@ echo "done"
 
 oc start-build -n ${PROJ} pacman --from-dir=${BASE}/.. --follow
 oc apply -n ${PROJ} -f ${BASE}/../yaml/pacman.yaml
+oc set env \
+  -n ${PROJ} \
+  deploy/pacman \
+  MONGO_SERVICE_HOST=mongodb \
+  MONGO_DATABASE=pacman \
+  MONGO_AUTH_USER="${MONGODB_USER}" \
+  MONGO_AUTH_PWD="${MONGODB_PASSWORD}"
+
 oc rollout status -n ${PROJ} deploy/pacman -w
 
 echo "pacman is now available at http://$(oc get -n ${PROJ} route/pacman -o jsonpath='{.spec.host}')"
