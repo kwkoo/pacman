@@ -3,7 +3,21 @@
 PROJ=demo
 
 oc delete all -l app=pacman -n ${PROJ}
-oc delete all -l app=mongodb-ephemeral -n ${PROJ}
-oc delete secrets -l app=mongodb-ephemeral -n ${PROJ}
+
+oc delete -n ${PROJ} mongodb,secret,svc -l app=mongodb-standalone
+oc delete -n ${PROJ} pvc -l app=mongodb-standalone
+
+echo -n "waiting for mongodb pods to disappear..."
+while [ $(oc get po -n ${PROJ} -l mongodb_setup=standalone 2>/dev/null | wc -l) -gt 0 ]; do
+  echo -n "."
+  sleep 5
+done
+echo "done"
+
+oc delete -n $PROJ subscription/mongodb-operator
+oc delete -n $PROJ operatorgroup/${PROJ}-mongodb
+oc get -n $PROJ csv -n $PROJ -o name | xargs oc delete -n $PROJ
+oc delete crd mongodbs.opstreelabs.in
+oc delete crd mongodbclusters.opstreelabs.in
 
 exit 0

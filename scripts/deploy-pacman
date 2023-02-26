@@ -4,7 +4,6 @@ PROJ="demo"
 MONGODB_USER="pacman"
 MONGODB_PASSWORD="pacpassword"
 MONGODB_DATABASE="pacman"
-MONGODB_ADMIN_PASSWORD="${MONGODB_PASSWORD}"
 
 cd `dirname $0`
 BASE=`pwd`
@@ -14,16 +13,92 @@ set -e
 
 oc project ${PROJ} || oc new-project ${PROJ}
 
-# Deploy mongodb
-oc new-app \
-  -n ${PROJ} \
-  -f https://raw.githubusercontent.com/sclorg/mongodb-container/master/examples/mongodb-ephemeral-template.json \
-  -p MONGODB_USER="${MONGODB_USER}" \
-  -p MONGODB_PASSWORD="${MONGODB_PASSWORD}" \
-  -p MONGODB_DATABASE="${MONGODB_DATABASE}" \
-  -p MONGODB_ADMIN_PASSWORD="${MONGODB_ADMIN_PASSWORD}"
+cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  annotations:
+    olm.providedAPIs: MongoDB.v1alpha1.opstreelabs.in,MongoDBCluster.v1alpha1.opstreelabs.in
+  name: ${PROJ}-mongodb
+  namespace: ${PROJ}
+spec:
+  targetNamespaces:
+  - ${PROJ}
+  upgradeStrategy: Default
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/mongodb-operator.${PROJ}: ""
+  name: mongodb-operator
+  namespace: ${PROJ}
+spec:
+  channel: alpha
+  installPlanApproval: Automatic
+  name: mongodb-operator
+  source: community-operators
+  sourceNamespace: openshift-marketplace
+EOF
 
-oc rollout status -n ${PROJ} dc/mongodb
+oc create secret generic mongodb-secret \
+  --dry-run=client \
+  -o yaml \
+  --from-literal=password=${MONGODB_PASSWORD} \
+| \
+oc label \
+  -f - \
+  --local \
+  --dry-run=client \
+  -o yaml \
+  app=mongodb-standalone \
+| \
+oc apply -f - -n ${PROJ}
+
+echo -n "waiting for MongoDB CRD..."
+until oc get crd mongodbs.opstreelabs.in >/dev/null 2>&1; do
+  echo -n "."
+  sleep 5
+done
+echo "done"
+
+cat <<EOF | oc apply -f -
+apiVersion: opstreelabs.in/v1alpha1
+kind: MongoDB
+metadata:
+  labels:
+    app: mongodb-standalone
+  name: mongodb
+  namespace: ${PROJ}
+spec:
+  kubernetesConfig:
+    image: 'quay.io/opstree/mongo:v5.0.6'
+    imagePullPolicy: IfNotPresent
+  mongoDBSecurity:
+    secretRef:
+      name: mongodb-secret
+      key: password
+    mongoDBAdminUser: ${MONGODB_USER}
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    storageSize: 1Gi
+    storageClass: gp3-csi
+EOF
+
+echo -n "waiting for mongodb pod to appear..."
+until oc get -n $PROJ po/mongodb-standalone-0 >/dev/null 2>&1; do
+  echo -n "."
+  sleep 5
+done
+echo "done"
+
+oc wait -n $PROJ po/mongodb-standalone-0 --for condition=Ready --timeout=90s
+
+# create db and db user here
+oc rsh -n $PROJ po/mongodb-standalone-0 mongosh -u $MONGODB_USER -p $MONGODB_PASSWORD --authenticationDatabase admin $MONGODB_DATABASE --eval 'db.createUser({user:"'"$MONGODB_USER"'",pwd:"'"$MONGODB_PASSWORD"'",roles:[{role:"dbAdmin", db:"'"$MONGODB_DATABASE"'"},{role:"readWrite",db:"'"$MONGODB_DATABASE"'"}]});' || echo "ignored error"
+
+oc expose -n $PROJ po mongodb-standalone-0 --port 27017 --name mongodb
 
 oc new-build \
   -n ${PROJ} \
